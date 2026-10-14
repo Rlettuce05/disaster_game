@@ -115,16 +115,26 @@
   }
   function play(){
     if(S.view!=='observe') return;
-    if(S.frame===kase().frames.length-1) S.frame=0;
-    pause();S.playing=true;render();
+    if(S.frame===kase().frames.length-1){S.frame=0;S.selectedEvent=null;}
+    pause(); S.playing=true;
+    updateObserveFrame();
+    scheduleReplay();
+  }
+  function scheduleReplay(){
+    if(S.timer!==null)clearInterval(S.timer);
     S.timer=setInterval(()=>{
-      if(S.frame>=kase().frames.length-1) {pause();render();return;}
-      S.frame+=1;render();
-      if(S.frame>=kase().frames.length-1){pause();render();}
+      if(S.view!=='observe'){pause();return;}
+      if(S.frame>=kase().frames.length-1){pause();updateObserveFrame();return;}
+      S.frame+=1;
+      if(S.frame===kase().frames.length-1){finishAttempt();pause();}
+      // No app.innerHTML replacement during playback: preserve input focus and log scrolling.
+      updateObserveFrame();
     },REPLAY_INTERVAL_MS/S.speed);
   }
   function gotoFrame(index){
-    pause();S.frame=Math.max(0,Math.min(index,kase().frames.length-1));S.selectedEvent=null;render();
+    pause(); S.frame=Math.max(0,Math.min(index,kase().frames.length-1));S.selectedEvent=null;
+    if(S.frame===kase().frames.length-1)finishAttempt();
+    updateObserveFrame();
   }
   function selectedEventObj(){
     const available=allEvents(S.view==='observe'?frame().time:Infinity);
@@ -244,11 +254,11 @@
     const end=S.frame===c.frames.length-1;
     return `<main class="page observe-page">${titleBlock('PHASE 03 / EVENT REPLAY','災害の連鎖を観察する',`震源：架空断層上 ${faultPercent()} / M6.5。${esc(c.zone)}代表演示を再生中（位置から被害を計算したものではありません）。`,`${chip('演示データ再生中','demo')}`)}
      <div class="content-grid"><div class="main-stack">${mapPanel('observe')}
-        <div class="panel playback-panel"><div class="playback-top"><div><span class="eyebrow">TIME CONTROL · Δt = 1分</span><div class="clock">${fmtTime(f.time)} <small>/ 06:00</small></div></div><div class="playback-actions"><button class="control-btn" data-action="backframe" ${S.frame===0?'disabled':''} aria-label="1分戻る">‹‹</button><button class="control-btn control-main" data-action="${S.playing?'pause':'play'}" aria-label="${S.playing?'一時停止':'再生'}">${S.playing?'Ⅱ':'▶'}</button><button class="control-btn" data-action="nextframe" ${end?'disabled':''} aria-label="1分進む">››</button><button class="speed-btn" data-action="speed" aria-label="再生速度を変更">${S.speed}×</button></div></div>
+        <div class="panel playback-panel"><div class="playback-top"><div><span class="eyebrow">TIME CONTROL · Δt = 1分</span><div class="clock"><span data-clock>${fmtTime(f.time)}</span> <small>/ 06:00</small></div></div><div class="playback-actions"><button class="control-btn" data-action="backframe" ${S.frame===0?'disabled':''} aria-label="1分戻る">‹‹</button><button class="control-btn control-main" data-action="${S.playing?'pause':'play'}" aria-label="${S.playing?'一時停止':'再生'}">${S.playing?'Ⅱ':'▶'}</button><button class="control-btn" data-action="nextframe" ${end?'disabled':''} aria-label="1分進む">››</button><button class="speed-btn" data-action="speed" aria-label="再生速度を変更">${S.speed}×</button></div></div>
         <input id="time-slider" type="range" min="0" max="${c.frames.length-1}" step="1" value="${S.frame}" aria-label="演示時刻（1分刻み）" class="time-slider" style="--progress:${100*S.frame/(c.frames.length-1)}%"><div class="tick-labels"><span>00:00</span><span>03:00</span><span>06:00</span></div>
-        ${end?`<button class="btn btn-primary btn-full result-btn" data-action="unlock" data-page="result">演示終了。結果を分析する →</button>`:'<span class="micro muted">再生が終わると結果分析へ進めます。時間バーは1分刻みです。イベントのない時刻は直前の状態を維持します。</span>'}</div>
-        <div class="panel log-panel"><div class="panel-head"><div><span class="eyebrow">EVENT LOG</span><h3>発生したイベント</h3></div>${chip(`${allEvents(f.time).length} 件`,'ghost')}</div><div class="event-list">${eventList(f.time)}</div></div>
-     </div><aside class="side-stack"><div class="panel status-panel"><div class="panel-head"><span class="eyebrow">SYSTEM STATUS</span>${chip(fmtTime(f.time),'ghost')}</div><h2>都市機能の稼働状況</h2>${systemBars(f.values)}<p class="disclaimer-inline">%は都市機能の稼働率を模した演示値で、実測・予測値ではありません。</p></div>${selectedEventPanel()}${detailsPanel()}</aside></div>
+        <div data-replay-ending>${end?`<button class="btn btn-primary btn-full result-btn" data-action="unlock" data-page="result">演示終了。結果を分析する →</button>`:'<span class="micro muted">再生が終わると結果分析へ進めます。時間バーは1分刻みです。イベントのない時刻は直前の状態を維持します。</span>'}</div></div>
+        <div class="panel log-panel"><div class="panel-head"><div><span class="eyebrow">EVENT LOG</span><h3>発生したイベント</h3></div><span data-event-count>${chip(`${allEvents(f.time).length} 件`,'ghost')}</span></div><div class="event-list" data-event-list>${eventList(f.time)}</div></div>
+     </div><aside class="side-stack"><div class="panel status-panel"><div class="panel-head"><span class="eyebrow">SYSTEM STATUS</span><span data-status-clock>${chip(fmtTime(f.time),'ghost')}</span></div><h2>都市機能の稼働状況</h2><div data-status-bars>${systemBars(f.values)}</div><p class="disclaimer-inline">%は都市機能の稼働率を模した演示値で、実測・予測値ではありません。</p></div><div data-observe-event-detail>${selectedEventPanel()}</div><div data-observe-facility>${detailsPanel()}</div></aside></div>
     </main>`;
   }
 
@@ -267,8 +277,50 @@
     </main>`;
   }
 
+  function updateObserveFrame(){
+    if(S.view!=='observe')return;
+    const f=frame(), c=kase(), end=S.frame===c.frames.length-1;
+    const clock=app.querySelector('[data-clock]');if(!clock)return;
+    clock.textContent=fmtTime(f.time);
+    const slider=app.querySelector('#time-slider');
+    if(slider){slider.value=String(S.frame);slider.style.setProperty('--progress',`${100*S.frame/(c.frames.length-1)}%`);}
+    const backward=app.querySelector('[data-action="backframe"]');if(backward)backward.disabled=S.frame===0;
+    const forward=app.querySelector('[data-action="nextframe"]');if(forward)forward.disabled=end;
+    const playback=app.querySelector('[data-action="play"], [data-action="pause"]');
+    if(playback){playback.dataset.action=S.playing?'pause':'play';playback.setAttribute('aria-label',S.playing?'一時停止':'再生');playback.textContent=S.playing?'Ⅱ':'▶';}
+    const speed=app.querySelector('[data-action="speed"]');if(speed)speed.textContent=`${S.speed}×`;
+    const statusClock=app.querySelector('[data-status-clock]');if(statusClock)statusClock.innerHTML=chip(fmtTime(f.time),'ghost');
+    const bars=app.querySelector('[data-status-bars]');
+    const newValues=JSON.stringify(f.values);
+    if(bars&&bars.dataset.values!==newValues){bars.innerHTML=systemBars(f.values);bars.dataset.values=newValues;}
+    // Update affected map nodes in place; do not replace the map while it has focus.
+    app.querySelectorAll('.observe-page .map-node[data-id]').forEach(el=>{
+      el.classList.toggle('affected',f.affected.includes(el.dataset.id));
+    });
+    const log=app.querySelector('[data-event-list]');
+    const eventIds=allEvents(f.time).map(e=>e.id).join(',');
+    if(log&&log.dataset.events!==eventIds){
+      const scrollTop=log.scrollTop;
+      log.innerHTML=eventList(f.time);
+      log.scrollTop=scrollTop;
+      log.dataset.events=eventIds;
+    }
+    const count=app.querySelector('[data-event-count]');if(count)count.innerHTML=chip(`${allEvents(f.time).length} 件`,'ghost');
+    const detail=app.querySelector('[data-observe-event-detail]');
+    if(detail){const html=selectedEventPanel();if(detail.dataset.html!==html){detail.innerHTML=html;detail.dataset.html=html;}}
+    const info=app.querySelector('[data-observe-facility]');
+    if(info){const html=detailsPanel();if(info.dataset.html!==html){info.innerHTML=html;info.dataset.html=html;}}
+    const ending=app.querySelector('[data-replay-ending]');
+    if(ending&&ending.dataset.ended!==String(end)){
+      ending.innerHTML=end?'<button class="btn btn-primary btn-full result-btn" data-action="unlock" data-page="result">演示終了。結果を分析する →</button>':'<span class="micro muted">再生が終わると結果分析へ進めます。時間バーは1分刻みです。イベントのない時刻は直前の状態を維持します。</span>';
+      ending.dataset.ended=String(end);
+    }
+    const resultNav=app.querySelector('.top-nav [data-page="result"]');if(resultNav)resultNav.disabled=!S.completedRun;
+  }
+
   function render(){
     app.innerHTML=header()+({start:startScreen,intel:intelScreen,setup:setupScreen,observe:observeScreen,result:resultScreen}[S.view])()+footer();
+    if(S.view==='observe')updateObserveFrame();
   }
 
   app.addEventListener('click',(ev)=>{
@@ -280,11 +332,11 @@
     if(a==='facility') {S.selectedFacility=target.dataset.id;return render();}
         if(a==='layer') {S.mapLayer=target.dataset.layer;return render();}
     if(a==='simulate') return startSimulation();
-    if(a==='pause') {pause();return render();}
+    if(a==='pause') {pause();return updateObserveFrame();}
     if(a==='play') return play();
     if(a==='backframe') return gotoFrame(S.frame-1);
     if(a==='nextframe') return gotoFrame(S.frame+1);
-    if(a==='speed') {S.speed=S.speed===1?2:S.speed===2?4:1;if(S.playing)return play();return render();}
+    if(a==='speed') {S.speed=S.speed===1?2:S.speed===2?4:1;if(S.playing)scheduleReplay();return updateObserveFrame();}
     if(a==='event'){S.selectedEvent=target.dataset.id;return render();}
     if(a==='retry'){S.selectedEvent=null;S.frame=0;S.completedRun=null;S.activeRun=null;S.unlocked=order.indexOf('observe');return navigate('setup');}
     if(a==='compare'){setFaultT(D.fault.demoPositions[kase().id==='west'?'east':'west'],false);S.magnitude='6.5';S.frame=0;S.selectedEvent=null;return startSimulation();}
@@ -333,10 +385,8 @@
   app.addEventListener('input',(ev)=>{
     if(ev.target.id==='fault-position')setFaultT(Number(ev.target.value)/100,false);
     if(ev.target.id==='time-slider') {
-      // Keep the thumb under the pointer until commit (change event).
-      const slider = ev.target;
-      const max = Number(slider.max);
-      slider.style.setProperty('--progress', `${100 * Number(slider.value) / max}%`);
+      // Live seek without destroying the slider or pointer capture.
+      gotoFrame(Number(ev.target.value));
     }
   });
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&S.playing){pause();render();}});
