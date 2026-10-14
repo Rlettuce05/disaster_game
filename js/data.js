@@ -43,7 +43,7 @@ window.DC_DATA = (() => {
   const west = {
     id:'west', name:'西部震源', zone:'西部', loc:[185,320], rp:35,
     summary:'断水が消火活動を制約し、火災と道路閉塞を通じて交通・医療へ影響が広がる。',
-    ending:'collapse', score:82, maxChain:6,
+    ending:'collapse', score:82,
     frames:frames([
       [0,   [100,100,100,100,100], ['residential']],
       [30,  [100,74,100,100,100], ['residential','water-plant']],
@@ -60,17 +60,17 @@ window.DC_DATA = (() => {
       {id:'w3',time:60,kind:'cascade',title:'消防用水の供給圧が低下',detail:'水道機能の低下が消火能力へ波及した。',causes:['w2'],place:'fire-station'},
       {id:'w4',time:60,kind:'damage',title:'住宅地区で火災発生',detail:'地震に伴う二次被害。プレイヤーが直接発火させたものではない。',causes:['w1'],place:'residential'},
       {id:'w5',time:90,kind:'response',title:'市消防本部が部隊を派遣',detail:'火災の通報を確認し、消防署から出動した。',basis:'この時点で受けた火災通報',causes:['w4'],place:'fire-station'},
-      {id:'w6',time:120,kind:'cascade',title:'消火活動の能力が不足',detail:'出動は実施されたが、消火用水不足が活動を制約した。',causes:['w3','w5'],place:'fire-station'},
+      {id:'w6',time:120,kind:'cascade',title:'消火活動の能力が不足',detail:'出動は実施されたが、消火用水不足が活動を制約した。',causes:['w3'],context:['w5'],place:'fire-station'},
       {id:'w7',time:180,kind:'cascade',title:'火災が周辺地区へ拡大',detail:'消火能力の不足と発生した火災の影響が重なった。',causes:['w4','w6'],place:'residential'},
       {id:'w8',time:240,kind:'cascade',title:'中央幹線道路が通行不能',detail:'延焼区域に接続する道路を規制し、通行が停止した。',causes:['w7'],place:'main-road'},
       {id:'w9',time:240,kind:'response',title:'市が迂回路の確保を指示',detail:'道路の通行止めを把握した後、代替経路を指示した。',basis:'道路の閉塞情報',causes:['w8'],place:'main-road'},
-      {id:'w10',time:360,kind:'cascade',title:'医療搬送に遅延が発生',detail:'主要路線の閉塞により医療施設へのアクセスが低下した。',causes:['w8','w9'],place:'hospital'},
+      {id:'w10',time:360,kind:'cascade',title:'医療搬送に遅延が発生',detail:'主要路線の閉塞により医療施設へのアクセスが低下した。',causes:['w8'],context:['w9'],place:'hospital'},
     ]
   };
   const east = {
     id:'east', name:'東部震源', zone:'東部', loc:[785,305], rp:35,
     summary:'停電が発生するが、非常用電源と復旧対応によって医療機能が維持される。',
-    ending:'contained', score:27, maxChain:2,
+    ending:'contained', score:27,
     frames:frames([
       [0,   [100,100,100,100,100], ['power-station']],
       [30,  [57,100,100,100,100], ['power-station']],
