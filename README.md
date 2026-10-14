@@ -1,12 +1,7 @@
 # disaster_game
 
-A browser game: JavaScript front end (`server/wwwroot`) served by an ASP.NET Core (C#) back end (`server`).
+A browser game written in JavaScript. There is no backend; it is a static site.
 
 ## Run
 
-```
-cd server
-dotnet run
-```
-
-Then open the URL printed in the console.
+Open `index.html` in a browser, or serve the directory, e.g. `python3 -m http.server`.
