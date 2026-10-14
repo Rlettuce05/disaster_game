@@ -11,6 +11,7 @@
     view:'start', unlocked:0, origin:'west', faultT:D.fault.demoPositions.west,
     magnitude:'6.5', selectedFacility:'water-plant',
     selectedEvent:null, frame:0, playing:false, timer:null, mapLayer:'infrastructure', speed:1,
+    activeRun:null, completedRun:null,
   };
   // The selectable hypocenter follows a continuous, piecewise-linear fictitious fault.
   // Two prerecorded outcomes are used only as clearly labelled M0 demonstration regions.
@@ -40,7 +41,11 @@
     }
     return bestT;
   }
-  const faultPercent=()=>`${(S.faultT*100).toFixed(1)}%`;
+  // A completed attempt is immutable: draft edits must never alter an earlier result.
+  const displayedRun=()=>S.view==='result'?S.completedRun:S.view==='observe'?S.activeRun:null;
+  const runOrigin=()=>displayedRun()?.origin ?? S.origin;
+  const runFaultT=()=>displayedRun()?.faultT ?? S.faultT;
+  const faultPercent=()=>`${(runFaultT()*100).toFixed(1)}%`;
   function setFaultT(t, redraw=true){
     S.faultT=clamp01(Number(t));
     S.origin=S.faultT<0.5?'west':'east';
@@ -60,7 +65,7 @@
   // Keep a single source of truth for mouse, touch, and slider selection.
   let activePointer=null;
   const esc = (x) => String(x).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  const kase = () => D.cases[S.origin];
+  const kase = () => D.cases[runOrigin()];
   const frame = () => kase().frames[S.frame];
   const money = () => D.scenario.magnitudeOptions.find(x => x.value === S.magnitude);
   const invalid = () => {
@@ -86,27 +91,50 @@
   function navigate(page) {
     if(!order.includes(page)) return;
     if(order.indexOf(page)>S.unlocked && page!=='start') return;
+    if(page==='result'&&!S.completedRun) return;
     pause(); S.view=page; render(); window.scrollTo({top:0,behavior:'instant'});
   }
-  function unlock(page) { S.unlocked=Math.max(S.unlocked, order.indexOf(page)); navigate(page); }
+  function unlock(page) {
+    if(page==='result' && (!S.activeRun || S.frame!==kase().frames.length-1))return;
+    if(page==='result')finishAttempt();
+    S.unlocked=Math.max(S.unlocked, order.indexOf(page)); navigate(page);
+  }
+  function finishAttempt(){
+    if(S.activeRun && S.frame===kase().frames.length-1){
+      S.completedRun={...S.activeRun};
+      S.unlocked=Math.max(S.unlocked,order.indexOf('result'));
+    }
+  }
   function startSimulation() {
     if(invalid()) return;
     pause(); S.frame=0; S.selectedEvent=null;
-    S.unlocked=Math.max(S.unlocked,order.indexOf('observe'));
+    S.activeRun={origin:S.origin,faultT:S.faultT,magnitude:S.magnitude};
+    S.completedRun=null; // Never expose the outcome of an unplayed retry.
+    S.unlocked=order.indexOf('observe');
     S.view='observe'; render(); play();
   }
   function play(){
     if(S.view!=='observe') return;
-    if(S.frame===kase().frames.length-1) S.frame=0;
-    pause();S.playing=true;render();
+    if(S.frame===kase().frames.length-1){S.frame=0;S.selectedEvent=null;}
+    pause(); S.playing=true;
+    updateObserveFrame();
+    scheduleReplay();
+  }
+  function scheduleReplay(){
+    if(S.timer!==null)clearInterval(S.timer);
     S.timer=setInterval(()=>{
-      if(S.frame>=kase().frames.length-1) {pause();render();return;}
-      S.frame+=1;render();
-      if(S.frame>=kase().frames.length-1){pause();render();}
+      if(S.view!=='observe'){pause();return;}
+      if(S.frame>=kase().frames.length-1){pause();updateObserveFrame();return;}
+      S.frame+=1;
+      if(S.frame===kase().frames.length-1){finishAttempt();pause();}
+      // No app.innerHTML replacement during playback: preserve input focus and log scrolling.
+      updateObserveFrame();
     },REPLAY_INTERVAL_MS/S.speed);
   }
   function gotoFrame(index){
-    pause();S.frame=Math.max(0,Math.min(index,kase().frames.length-1));S.selectedEvent=null;render();
+    pause(); S.frame=Math.max(0,Math.min(index,kase().frames.length-1));S.selectedEvent=null;
+    if(S.frame===kase().frames.length-1)finishAttempt();
+    updateObserveFrame();
   }
   function selectedEventObj(){
     const available=allEvents(S.view==='observe'?frame().time:Infinity);
@@ -130,16 +158,16 @@
   function mapSVG(mode='intel'){
     const ob=mode==='observe', se=mode==='setup';
     const affected=ob?frame().affected:[];
-    const earthquakeloc=(se||ob)?faultPoint(S.faultT):null;
+    const earthquakeloc=(se||ob)?faultPoint(runFaultT()):null;
     const statuses = D.facilities.map(f=>{
       const danger=affected.includes(f.id), selected=(S.selectedFacility===f.id && !se);
       const nodeColor = danger?'#d37e70':f.system?D.systems.find(x=>x.id===f.system).color:'#c1c9d0';
-      return `<g role="button" tabindex="0" aria-label="${esc(f.label)}の情報" data-action="facility" data-id="${esc(f.id)}" class="map-node ${selected?'picked':''}" transform="translate(${f.x} ${f.y})">
+      return `<g role="button" tabindex="0" aria-label="${esc(f.label)}の情報" data-action="facility" data-id="${esc(f.id)}" class="map-node ${selected?'picked':''} ${danger?'affected':''}" transform="translate(${f.x} ${f.y})">
        <circle class="node-aura" r="29" fill="${nodeColor}" opacity="${danger?'.16':'.08'}"/>
        <circle r="19" fill="#132d3e" stroke="${nodeColor}" stroke-width="${danger?'3':'2'}"/>
        <text x="0" y="5" text-anchor="middle" font-size="13" font-family="system-ui" font-weight="800" fill="#f0f4f7">${f.code}</text>
        <text class="map-node-label" x="0" y="38" text-anchor="middle" font-size="13" font-weight="650" fill="#e6edf1">${esc(f.label)}</text>
-       ${danger?'<circle cx="15" cy="-15" r="6" fill="#ed947b" stroke="#122534" stroke-width="2"/>':''}
+       <circle class="node-alert" cx="15" cy="-15" r="6" fill="#ed947b" stroke="#122534" stroke-width="2"/>
       </g>`;
     }).join('');
     const waterPath='<path d="M220 189 L458 276" class="water-line"/>';
@@ -216,19 +244,21 @@
     const e=selectedEventObj();
     if(!e)return '';
     const causes=e.causes.map(id=>findEvent(id)).filter(Boolean).map(eventTitle);
-    const children=kase().events.filter(x=>x.causes.includes(e.id));
-    return `<div class="panel event-detail"><div class="panel-head"><span class="eyebrow">EVENT DETAIL</span>${chip(fmtTime(e.time),'ghost')}</div><h3>${esc(eventTitle(e))}</h3><p class="panel-copy">${esc(eventDetail(e))}</p><div class="detail-row"><span>原因</span><strong>${esc(causes.length?causes.join(' / '):'一次災害の発生')}</strong></div><div class="detail-row"><span>後続イベント</span><strong>${esc(children.length?children.map(eventTitle).join(' / '):'記録なし')}</strong></div>${e.basis?`<div class="ai-basis"><strong>都市側の判断根拠</strong><p>${esc(e.basis)}</p></div>`:''}</div>`;
+    const visibleUntil=S.view==='observe'?frame().time:Infinity;
+    const children=kase().events.filter(x=>x.time<=visibleUntil && x.causes.includes(e.id));
+    const related=(e.context||[]).map(findEvent).filter(Boolean).map(eventTitle);
+    return `<div class="panel event-detail"><div class="panel-head"><span class="eyebrow">EVENT DETAIL</span>${chip(fmtTime(e.time),'ghost')}</div><h3>${esc(eventTitle(e))}</h3><p class="panel-copy">${esc(eventDetail(e))}</p><div class="detail-row"><span>原因</span><strong>${esc(causes.length?causes.join(' / '):'一次災害の発生')}</strong></div><div class="detail-row"><span>後続イベント</span><strong>${esc(children.length?children.map(eventTitle).join(' / '):'現時点で判明した後続なし')}</strong></div>${related.length?`<div class="detail-row"><span>対応・関連（原因ではない）</span><strong>${esc(related.join(' / '))}</strong></div>`:''}${e.basis?`<div class="ai-basis"><strong>都市側の判断根拠</strong><p>${esc(e.basis)}</p></div>`:''}</div>`;
   }
   function observeScreen(){
     const f=frame(), c=kase();
     const end=S.frame===c.frames.length-1;
     return `<main class="page observe-page">${titleBlock('PHASE 03 / EVENT REPLAY','災害の連鎖を観察する',`震源：架空断層上 ${faultPercent()} / M6.5。${esc(c.zone)}代表演示を再生中（位置から被害を計算したものではありません）。`,`${chip('演示データ再生中','demo')}`)}
      <div class="content-grid"><div class="main-stack">${mapPanel('observe')}
-        <div class="panel playback-panel"><div class="playback-top"><div><span class="eyebrow">TIME CONTROL · Δt = 1分</span><div class="clock">${fmtTime(f.time)} <small>/ 06:00</small></div></div><div class="playback-actions"><button class="control-btn" data-action="backframe" ${S.frame===0?'disabled':''} aria-label="1分戻る">‹‹</button><button class="control-btn control-main" data-action="${S.playing?'pause':'play'}" aria-label="${S.playing?'一時停止':'再生'}">${S.playing?'Ⅱ':'▶'}</button><button class="control-btn" data-action="nextframe" ${end?'disabled':''} aria-label="1分進む">››</button><button class="speed-btn" data-action="speed" aria-label="再生速度を変更">${S.speed}×</button></div></div>
+        <div class="panel playback-panel"><div class="playback-top"><div><span class="eyebrow">TIME CONTROL · Δt = 1分</span><div class="clock"><span data-clock>${fmtTime(f.time)}</span> <small>/ 06:00</small></div></div><div class="playback-actions"><button class="control-btn" data-action="backframe" ${S.frame===0?'disabled':''} aria-label="1分戻る">‹‹</button><button class="control-btn control-main" data-action="${S.playing?'pause':'play'}" aria-label="${S.playing?'一時停止':'再生'}">${S.playing?'Ⅱ':'▶'}</button><button class="control-btn" data-action="nextframe" ${end?'disabled':''} aria-label="1分進む">››</button><button class="speed-btn" data-action="speed" aria-label="再生速度を変更">${S.speed}×</button></div></div>
         <input id="time-slider" type="range" min="0" max="${c.frames.length-1}" step="1" value="${S.frame}" aria-label="演示時刻（1分刻み）" class="time-slider" style="--progress:${100*S.frame/(c.frames.length-1)}%"><div class="tick-labels"><span>00:00</span><span>03:00</span><span>06:00</span></div>
-        ${end?`<button class="btn btn-primary btn-full result-btn" data-action="unlock" data-page="result">演示終了。結果を分析する →</button>`:'<span class="micro muted">再生が終わると結果分析へ進めます。時間バーは1分刻みです。イベントのない時刻は直前の状態を維持します。</span>'}</div>
-        <div class="panel log-panel"><div class="panel-head"><div><span class="eyebrow">EVENT LOG</span><h3>発生したイベント</h3></div>${chip(`${allEvents(f.time).length} 件`,'ghost')}</div><div class="event-list">${eventList(f.time)}</div></div>
-     </div><aside class="side-stack"><div class="panel status-panel"><div class="panel-head"><span class="eyebrow">SYSTEM STATUS</span>${chip(fmtTime(f.time),'ghost')}</div><h2>都市機能の稼働状況</h2>${systemBars(f.values)}<p class="disclaimer-inline">%は都市機能の稼働率を模した演示値で、実測・予測値ではありません。</p></div>${selectedEventPanel()}${detailsPanel()}</aside></div>
+        <div data-replay-ending>${end?`<button class="btn btn-primary btn-full result-btn" data-action="unlock" data-page="result">演示終了。結果を分析する →</button>`:'<span class="micro muted">再生が終わると結果分析へ進めます。時間バーは1分刻みです。イベントのない時刻は直前の状態を維持します。</span>'}</div></div>
+        <div class="panel log-panel"><div class="panel-head"><div><span class="eyebrow">EVENT LOG</span><h3>発生したイベント</h3></div><span data-event-count>${chip(`${allEvents(f.time).length} 件`,'ghost')}</span></div><div class="event-list" data-event-list>${eventList(f.time)}</div></div>
+     </div><aside class="side-stack"><div class="panel status-panel"><div class="panel-head"><span class="eyebrow">SYSTEM STATUS</span><span data-status-clock>${chip(fmtTime(f.time),'ghost')}</span></div><h2>都市機能の稼働状況</h2><div data-status-bars>${systemBars(f.values)}</div><p class="disclaimer-inline">%は都市機能の稼働率を模した演示値で、実測・予測値ではありません。</p></div><div data-observe-event-detail>${selectedEventPanel()}</div><div data-observe-facility>${detailsPanel()}</div></aside></div>
     </main>`;
   }
 
@@ -238,17 +268,96 @@
     const linked=new Set([selected,...(chosen?.causes||[]),...c.events.filter(e=>e.causes.includes(selected)).map(e=>e.id)]);
     return `<div class="cause-list">${c.events.map((e,i)=>`<button class="cause-node ${selected===e.id?'active':''} ${selected&&!linked.has(e.id)?'dim':''}" data-action="event" data-id="${e.id}" aria-pressed="${selected===e.id}"><span class="cause-step">${String(i+1).padStart(2,'0')}</span><span class="cause-text"><strong>${esc(eventTitle(e))}</strong><small>${fmtTime(e.time)} ${e.causes.length?'· '+e.causes.map(id=>'#'+String(c.events.findIndex(e=>e.id===id)+1).padStart(2,'0')).join(', ')+' から派生':'· 起点'}</small></span><span class="event-marker ${e.kind}"></span></button>`).join('')}</div>`;
   }
+  // Only hazard/damage/cascade edges count toward the harmful cascade depth.
+  // Responses/recovery can causally support recovery but cannot inflate damage depth.
+  function cascadeMetrics(c){
+    const damageKinds=new Set(['hazard','damage','cascade']);
+    const events=new Map(c.events.map(e=>[e.id,e]));
+    const depthCache=new Map();
+    function depth(id){
+      if(depthCache.has(id))return depthCache.get(id);
+      const e=events.get(id);
+      if(!e||!damageKinds.has(e.kind))return -1;
+      const predecessors=e.causes.map(events.get.bind(events)).filter(p=>p&&damageKinds.has(p.kind));
+      const d=predecessors.length?1+Math.max(...predecessors.map(p=>depth(p.id))):0;
+      depthCache.set(id,d);return d;
+    }
+    const depthEdges=Math.max(0,...c.events.filter(e=>damageKinds.has(e.kind)).map(e=>depth(e.id)));
+    const touchedSystems=D.systems.filter((sys,i)=>c.frames.some(f=>f.values[i]<100));
+    const finalLoss=D.systems.filter((sys,i)=>c.frames.at(-1).values[i]<100);
+    return {depthEdges,touchedSystems,finalLoss,efficiency:(c.score/c.rp).toFixed(2)};
+  }
+  function evaluationPanel(c){
+    const m=cascadeMetrics(c);
+    const reason=c.ending==='collapse'
+      ? `最終時刻に${m.finalLoss.map(s=>s.name).join('・')}の${m.finalLoss.length}系統で機能低下が残存し、複数の系統に連鎖が波及したため、崩壊とする演示です。`
+      : `影響を受けた${m.touchedSystems.map(s=>s.name).join('・')}の${m.touchedSystems.length}系統が最終時刻までに100%へ回復したため、収束とする演示です。`;
+    return `<div class="panel evaluation-panel"><div class="panel-head"><span class="eyebrow">EVALUATION / DEMO</span>${chip('仮の評価','ghost')}</div>
+      <h3>スコアの根拠と連鎖の評価</h3>
+      <div class="evaluation-metrics">
+        <div><small>有害な連鎖の深さ</small><strong>${m.depthEdges}<em> 辺</em></strong></div>
+        <div><small>一度でも影響した都市機能</small><strong>${m.touchedSystems.length}<em> / ${D.systems.length} 系統</em></strong></div>
+        <div><small>RP効率（仮スコア / RP）</small><strong>${m.efficiency}<em> 点/RP</em></strong></div>
+      </div>
+      <p class="panel-copy"><strong>終局の説明：</strong>${esc(reason)}</p>
+      <p class="panel-copy">被害・消防活動・道路閉塞などの経路が深く、波及先が多いほど高く評価する構想です。RPが同一でも都市の対処により結果が変わります。西部 ${D.cases.west.score} 点／東部 ${D.cases.east.score} 点は説明用の仮値で、上記の項目から算出していません。</p>
+      <p class="disclaimer-inline">深さは一次災害を起点に、被害・連鎖障害のイベントのみをたどった最長経路の因果辺数です。都市側の対策・復旧は数えません。発生後の稼働率低下がある系統を「波及」と数えます。採点式・崩壊閾値はM1〜M2で検討します。</p></div>`;
+  }
+
   function resultScreen(){
-    const c=kase(), last=c.frames.at(-1),collapsed=c.ending==='collapse', other=D.cases[S.origin==='west'?'east':'west'];
+    const c=kase(), last=c.frames.at(-1),collapsed=c.ending==='collapse', other=D.cases[c.id==='west'?'east':'west'];
     return `<main class="page">${titleBlock('PHASE 04 / POST-EVENT ANALYSIS','何が連鎖を引き起こしたか','一次災害の条件から、施設損傷、都市の対抗、機能低下までを遡って確認する。',`<button class="btn btn-primary" data-action="retry">条件を変えて再挑戦 ↗</button>`)}
       <div class="result-hero ${collapsed?'red':'green'}"><div><span class="eyebrow">SCENARIO OUTCOME / ${esc(c.name)}</span><h2>${collapsed?'都市機能が崩壊':'都市機能が収束'}</h2><p>${esc(c.summary)}</p><div class="outcome-disclaimer">震源は架空断層上 ${faultPercent()}。この結果は${esc(c.zone)}代表演示の固定結果で、指定した座標の被害予測ではありません。</div></div><div class="score-spot"><span>演示スコア</span><strong>${c.score}<small> / 100</small></strong><span>仮評価 · RP消費 ${c.rp}</span></div></div>
       <div class="result-top-grid"><div class="panel"><div class="panel-head"><span class="eyebrow">FINAL SYSTEM STATUS</span>${chip('06:00','ghost')}</div><h3>最終都市機能</h3>${systemBars(last.values,true)}</div><div class="panel"><div class="panel-head"><span class="eyebrow">CASE COMPARISON</span>${chip('同一規模 M6.5','ghost')}</div><h3>地震位置の違い</h3><div class="comparison"><div class="compare-row"><span></span><strong>現在のケース</strong><strong>比較ケース</strong></div><div class="compare-row"><span>断層上の震源位置</span><strong>${faultPercent()}</strong><strong>${(100*D.fault.demoPositions[other.id]).toFixed(1)}%</strong></div><div class="compare-row"><span>使用した代表演示</span><strong>${c.zone}</strong><strong>${other.zone}</strong></div><div class="compare-row"><span>結果</span><strong>${c.ending==='collapse'?'機能崩壊':'収束'}</strong><strong>${other.ending==='collapse'?'機能崩壊':'収束'}</strong></div><div class="compare-row"><span>演示スコア</span><strong>${c.score}</strong><strong>${other.score}</strong></div><div class="compare-row"><span>RP消費</span><strong>${c.rp}</strong><strong>${other.rp}</strong></div></div><p class="disclaimer-inline">比較用の演示結果です。ゲームバランスや現実の危険性を示すものではありません。</p></div></div>
+      ${evaluationPanel(c)}
       <div class="result-analysis-grid"><div class="panel"><div class="panel-head"><span class="eyebrow">CAUSAL HISTORY</span>${chip('原因IDで追跡','ghost')}</div><h3>連鎖イベントと原因</h3><p class="panel-copy">イベントを選択すると、その原因と直後の派生先を強調します。「#」はこの一覧のイベント番号です。</p>${causalChain()}</div><div class="side-stack">${selectedEventPanel()}<div class="panel"><span class="eyebrow">NEXT ATTEMPT</span><h3>別の震源を試す</h3><p class="panel-copy">地震規模を変えず、架空断層上の震源位置を変更できます。演示結果は西側・東側の2種類を切り替えて表示します。</p><button class="btn btn-secondary btn-full" data-action="compare">${other.zone}地区のケースを確認 →</button></div></div></div>
     </main>`;
   }
 
+  function updateObserveFrame(){
+    if(S.view!=='observe')return;
+    const f=frame(), c=kase(), end=S.frame===c.frames.length-1;
+    const clock=app.querySelector('[data-clock]');if(!clock)return;
+    clock.textContent=fmtTime(f.time);
+    const slider=app.querySelector('#time-slider');
+    if(slider){slider.value=String(S.frame);slider.style.setProperty('--progress',`${100*S.frame/(c.frames.length-1)}%`);}
+    const backward=app.querySelector('[data-action="backframe"]');if(backward)backward.disabled=S.frame===0;
+    const forward=app.querySelector('[data-action="nextframe"]');if(forward)forward.disabled=end;
+    const playback=app.querySelector('[data-action="play"], [data-action="pause"]');
+    if(playback){playback.dataset.action=S.playing?'pause':'play';playback.setAttribute('aria-label',S.playing?'一時停止':'再生');playback.textContent=S.playing?'Ⅱ':'▶';}
+    const speed=app.querySelector('[data-action="speed"]');if(speed)speed.textContent=`${S.speed}×`;
+    const statusClock=app.querySelector('[data-status-clock]');if(statusClock)statusClock.innerHTML=chip(fmtTime(f.time),'ghost');
+    const bars=app.querySelector('[data-status-bars]');
+    const newValues=JSON.stringify(f.values);
+    if(bars&&bars.dataset.values!==newValues){bars.innerHTML=systemBars(f.values);bars.dataset.values=newValues;}
+    // Update affected map nodes in place; do not replace the map while it has focus.
+    app.querySelectorAll('.observe-page .map-node[data-id]').forEach(el=>{
+      el.classList.toggle('affected',f.affected.includes(el.dataset.id));
+    });
+    const log=app.querySelector('[data-event-list]');
+    const eventIds=allEvents(f.time).map(e=>e.id).join(',');
+    if(log&&log.dataset.events!==eventIds){
+      const scrollTop=log.scrollTop;
+      log.innerHTML=eventList(f.time);
+      log.scrollTop=scrollTop;
+      log.dataset.events=eventIds;
+    }
+    const count=app.querySelector('[data-event-count]');if(count)count.innerHTML=chip(`${allEvents(f.time).length} 件`,'ghost');
+    const detail=app.querySelector('[data-observe-event-detail]');
+    if(detail){const html=selectedEventPanel();if(detail.dataset.html!==html){detail.innerHTML=html;detail.dataset.html=html;}}
+    const info=app.querySelector('[data-observe-facility]');
+    if(info){const html=detailsPanel();if(info.dataset.html!==html){info.innerHTML=html;info.dataset.html=html;}}
+    const ending=app.querySelector('[data-replay-ending]');
+    if(ending&&ending.dataset.ended!==String(end)){
+      ending.innerHTML=end?'<button class="btn btn-primary btn-full result-btn" data-action="unlock" data-page="result">演示終了。結果を分析する →</button>':'<span class="micro muted">再生が終わると結果分析へ進めます。時間バーは1分刻みです。イベントのない時刻は直前の状態を維持します。</span>';
+      ending.dataset.ended=String(end);
+    }
+    const resultNav=app.querySelector('.top-nav [data-page="result"]');if(resultNav)resultNav.disabled=!S.completedRun;
+  }
+
   function render(){
     app.innerHTML=header()+({start:startScreen,intel:intelScreen,setup:setupScreen,observe:observeScreen,result:resultScreen}[S.view])()+footer();
+    if(S.view==='observe')updateObserveFrame();
   }
 
   app.addEventListener('click',(ev)=>{
@@ -260,14 +369,14 @@
     if(a==='facility') {S.selectedFacility=target.dataset.id;return render();}
         if(a==='layer') {S.mapLayer=target.dataset.layer;return render();}
     if(a==='simulate') return startSimulation();
-    if(a==='pause') {pause();return render();}
+    if(a==='pause') {pause();return updateObserveFrame();}
     if(a==='play') return play();
     if(a==='backframe') return gotoFrame(S.frame-1);
     if(a==='nextframe') return gotoFrame(S.frame+1);
-    if(a==='speed') {S.speed=S.speed===1?2:S.speed===2?4:1;if(S.playing)return play();return render();}
+    if(a==='speed') {S.speed=S.speed===1?2:S.speed===2?4:1;if(S.playing)scheduleReplay();return updateObserveFrame();}
     if(a==='event'){S.selectedEvent=target.dataset.id;return render();}
-    if(a==='retry'){S.selectedEvent=null;S.frame=0;return navigate('setup');}
-    if(a==='compare'){setFaultT(D.fault.demoPositions[S.origin==='west'?'east':'west'],false);S.magnitude='6.5';S.frame=0;S.selectedEvent=null;return startSimulation();}
+    if(a==='retry'){S.selectedEvent=null;S.frame=0;S.completedRun=null;S.activeRun=null;S.unlocked=order.indexOf('observe');return navigate('setup');}
+    if(a==='compare'){setFaultT(D.fault.demoPositions[kase().id==='west'?'east':'west'],false);S.magnitude='6.5';S.frame=0;S.selectedEvent=null;return startSimulation();}
   });
   function pointerFaultT(ev,svg){
     const ctm=svg.getScreenCTM();
@@ -313,10 +422,8 @@
   app.addEventListener('input',(ev)=>{
     if(ev.target.id==='fault-position')setFaultT(Number(ev.target.value)/100,false);
     if(ev.target.id==='time-slider') {
-      // Keep the thumb under the pointer until commit (change event).
-      const slider = ev.target;
-      const max = Number(slider.max);
-      slider.style.setProperty('--progress', `${100 * Number(slider.value) / max}%`);
+      // Live seek without destroying the slider or pointer capture.
+      gotoFrame(Number(ev.target.value));
     }
   });
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&S.playing){pause();render();}});

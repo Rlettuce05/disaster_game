@@ -24,3 +24,16 @@
 .fault-endpoints{display:flex;justify-content:space-between;color:#8eaab9;font-size:10px}
 .fault-explainer{font-size:11px;line-height:1.75;margin:15px 0 20px;padding:12px 13px;background:#24415388;border-left:3px solid #d9a471;color:#b8cbd5}
 @media (max-width:600px){.fault-position-readout strong{font-size:21px}.fault-hit{stroke-width:58}}
+
+/* M0 issue fixes: incremental map state and transparent demo evaluation. */
+.map-node .node-alert{display:none}
+.map-node.affected .node-alert{display:block}
+.map-node.affected .node-aura{fill:#d37e70;opacity:.16}
+.map-node.affected>circle:nth-of-type(2){stroke:#d37e70;stroke-width:3}
+.evaluation-panel{margin:0 0 18px}
+.evaluation-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0 20px}
+.evaluation-metrics>div{padding:16px 14px;background:#122b3b;border:1px solid #345369;border-radius:9px}
+.evaluation-metrics small{display:block;font-size:11px;color:#95adbc;margin-bottom:9px}
+.evaluation-metrics strong{font-size:26px;font-variant-numeric:tabular-nums}
+.evaluation-metrics em{font-size:12px;font-weight:500;font-style:normal;color:#a9bfcc}
+@media(max-width:600px){.evaluation-metrics{grid-template-columns:1fr}}
