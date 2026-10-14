@@ -268,11 +268,48 @@
     const linked=new Set([selected,...(chosen?.causes||[]),...c.events.filter(e=>e.causes.includes(selected)).map(e=>e.id)]);
     return `<div class="cause-list">${c.events.map((e,i)=>`<button class="cause-node ${selected===e.id?'active':''} ${selected&&!linked.has(e.id)?'dim':''}" data-action="event" data-id="${e.id}" aria-pressed="${selected===e.id}"><span class="cause-step">${String(i+1).padStart(2,'0')}</span><span class="cause-text"><strong>${esc(eventTitle(e))}</strong><small>${fmtTime(e.time)} ${e.causes.length?'· '+e.causes.map(id=>'#'+String(c.events.findIndex(e=>e.id===id)+1).padStart(2,'0')).join(', ')+' から派生':'· 起点'}</small></span><span class="event-marker ${e.kind}"></span></button>`).join('')}</div>`;
   }
+  // Only hazard/damage/cascade edges count toward the harmful cascade depth.
+  // Responses/recovery can causally support recovery but cannot inflate damage depth.
+  function cascadeMetrics(c){
+    const damageKinds=new Set(['hazard','damage','cascade']);
+    const events=new Map(c.events.map(e=>[e.id,e]));
+    const depthCache=new Map();
+    function depth(id){
+      if(depthCache.has(id))return depthCache.get(id);
+      const e=events.get(id);
+      if(!e||!damageKinds.has(e.kind))return -1;
+      const predecessors=e.causes.map(events.get.bind(events)).filter(p=>p&&damageKinds.has(p.kind));
+      const d=predecessors.length?1+Math.max(...predecessors.map(p=>depth(p.id))):0;
+      depthCache.set(id,d);return d;
+    }
+    const depthEdges=Math.max(0,...c.events.filter(e=>damageKinds.has(e.kind)).map(e=>depth(e.id)));
+    const touchedSystems=D.systems.filter((sys,i)=>c.frames.some(f=>f.values[i]<100));
+    const finalLoss=D.systems.filter((sys,i)=>c.frames.at(-1).values[i]<100);
+    return {depthEdges,touchedSystems,finalLoss,efficiency:(c.score/c.rp).toFixed(2)};
+  }
+  function evaluationPanel(c){
+    const m=cascadeMetrics(c);
+    const reason=c.ending==='collapse'
+      ? `最終時刻に${m.finalLoss.map(s=>s.name).join('・')}の${m.finalLoss.length}系統で機能低下が残存し、複数の系統に連鎖が波及したため、崩壊とする演示です。`
+      : `影響を受けた${m.touchedSystems.map(s=>s.name).join('・')}の${m.touchedSystems.length}系統が最終時刻までに100%へ回復したため、収束とする演示です。`;
+    return `<div class="panel evaluation-panel"><div class="panel-head"><span class="eyebrow">EVALUATION / DEMO</span>${chip('仮の評価','ghost')}</div>
+      <h3>スコアの根拠と連鎖の評価</h3>
+      <div class="evaluation-metrics">
+        <div><small>有害な連鎖の深さ</small><strong>${m.depthEdges}<em> 辺</em></strong></div>
+        <div><small>一度でも影響した都市機能</small><strong>${m.touchedSystems.length}<em> / ${D.systems.length} 系統</em></strong></div>
+        <div><small>RP効率（仮スコア / RP）</small><strong>${m.efficiency}<em> 点/RP</em></strong></div>
+      </div>
+      <p class="panel-copy"><strong>終局の説明：</strong>${esc(reason)}</p>
+      <p class="panel-copy">被害・消防活動・道路閉塞などの経路が深く、波及先が多いほど高く評価する構想です。RPが同一でも都市の対処により結果が変わります。西部 ${D.cases.west.score} 点／東部 ${D.cases.east.score} 点は説明用の仮値で、上記の項目から算出していません。</p>
+      <p class="disclaimer-inline">深さは一次災害を起点に、被害・連鎖障害のイベントのみをたどった最長経路の因果辺数です。都市側の対策・復旧は数えません。発生後の稼働率低下がある系統を「波及」と数えます。採点式・崩壊閾値はM1〜M2で検討します。</p></div>`;
+  }
+
   function resultScreen(){
     const c=kase(), last=c.frames.at(-1),collapsed=c.ending==='collapse', other=D.cases[c.id==='west'?'east':'west'];
     return `<main class="page">${titleBlock('PHASE 04 / POST-EVENT ANALYSIS','何が連鎖を引き起こしたか','一次災害の条件から、施設損傷、都市の対抗、機能低下までを遡って確認する。',`<button class="btn btn-primary" data-action="retry">条件を変えて再挑戦 ↗</button>`)}
       <div class="result-hero ${collapsed?'red':'green'}"><div><span class="eyebrow">SCENARIO OUTCOME / ${esc(c.name)}</span><h2>${collapsed?'都市機能が崩壊':'都市機能が収束'}</h2><p>${esc(c.summary)}</p><div class="outcome-disclaimer">震源は架空断層上 ${faultPercent()}。この結果は${esc(c.zone)}代表演示の固定結果で、指定した座標の被害予測ではありません。</div></div><div class="score-spot"><span>演示スコア</span><strong>${c.score}<small> / 100</small></strong><span>仮評価 · RP消費 ${c.rp}</span></div></div>
       <div class="result-top-grid"><div class="panel"><div class="panel-head"><span class="eyebrow">FINAL SYSTEM STATUS</span>${chip('06:00','ghost')}</div><h3>最終都市機能</h3>${systemBars(last.values,true)}</div><div class="panel"><div class="panel-head"><span class="eyebrow">CASE COMPARISON</span>${chip('同一規模 M6.5','ghost')}</div><h3>地震位置の違い</h3><div class="comparison"><div class="compare-row"><span></span><strong>現在のケース</strong><strong>比較ケース</strong></div><div class="compare-row"><span>断層上の震源位置</span><strong>${faultPercent()}</strong><strong>${(100*D.fault.demoPositions[other.id]).toFixed(1)}%</strong></div><div class="compare-row"><span>使用した代表演示</span><strong>${c.zone}</strong><strong>${other.zone}</strong></div><div class="compare-row"><span>結果</span><strong>${c.ending==='collapse'?'機能崩壊':'収束'}</strong><strong>${other.ending==='collapse'?'機能崩壊':'収束'}</strong></div><div class="compare-row"><span>演示スコア</span><strong>${c.score}</strong><strong>${other.score}</strong></div><div class="compare-row"><span>RP消費</span><strong>${c.rp}</strong><strong>${other.rp}</strong></div></div><p class="disclaimer-inline">比較用の演示結果です。ゲームバランスや現実の危険性を示すものではありません。</p></div></div>
+      ${evaluationPanel(c)}
       <div class="result-analysis-grid"><div class="panel"><div class="panel-head"><span class="eyebrow">CAUSAL HISTORY</span>${chip('原因IDで追跡','ghost')}</div><h3>連鎖イベントと原因</h3><p class="panel-copy">イベントを選択すると、その原因と直後の派生先を強調します。「#」はこの一覧のイベント番号です。</p>${causalChain()}</div><div class="side-stack">${selectedEventPanel()}<div class="panel"><span class="eyebrow">NEXT ATTEMPT</span><h3>別の震源を試す</h3><p class="panel-copy">地震規模を変えず、架空断層上の震源位置を変更できます。演示結果は西側・東側の2種類を切り替えて表示します。</p><button class="btn btn-secondary btn-full" data-action="compare">${other.zone}地区のケースを確認 →</button></div></div></div>
     </main>`;
   }
