@@ -1,3 +1,34 @@
+# DISASTER CASCADE
+
+## M1 プロトタイプ（実計算）
+
+M1は架空都市の災害連鎖を毎分計算する試作版です。以前のM0固定演示は変更せず index.html に残しています。
+
+### 起動
+- **M1**: m1.html をブラウザで開く（ローカルサーバー推奨）。
+- **M0**: index.html をブラウザで開く（従来の固定演示）。
+
+ローカル実行（Nodeは自動テスト時のみ必要）:
+
+    python -m http.server 8000
+
+M1 は http://localhost:8000/m1.html で開きます。依存ライブラリ・バックエンドは不要です。
+
+M1では断層上の位置と規模を変更すると、直接損傷、二次火災、道路障害、
+都市AIの出動、医療等の稼働率が再計算されます。
+6時間の時系列、発生したイベントと因果関係、条件を変えた比較結果を確認できます。
+ただし都市・断層・計算式・RPは架空の仮仕様であり、実際の防災評価には使用できません。
+
+### テストと自動実験
+
+    node --test tests/test_m1_sim.cjs tests/test_m1_ui.cjs
+    node scripts/run-m1-experiments.cjs
+    node scripts/run-m1-experiments.cjs --json
+
+モデルの詳細は docs/m1-model.md、実験結果は docs/m1-validation-report.md を参照してください。
+
+---
+
 # DISASTER CASCADE — M0 ブラウザモック
 
 架空都市を題材とするゲーム **DISASTER CASCADE** のM0操作モックです。M0の目的は完成イメージの共有であり、災害シミュレーションの検証ではありません。
