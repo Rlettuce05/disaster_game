@@ -199,7 +199,7 @@
     const score=Math.round(metrics.meanLoss*100);
     const ending=metrics.finalLoss>.18?'collapse':'contained';
     return {isSimulation:true,id:cfg.faultPosition<.5?'west':'east',
-      zone:cfg.faultPosition<.5?'西部':'東部',name:'M1計算結果',rp:35,
+      zone:cfg.faultPosition<.5?'西部':'東部',name:'M1計算結果',rp:cfg.magnitude<=6?25:cfg.magnitude<=6.5?35:55,
       faultPosition:cfg.faultPosition,magnitude:cfg.magnitude,seed:cfg.seed===undefined?42:cfg.seed,
       frames,events,metrics,score,ending,damages:Object.fromEntries(Object.entries(damage).map(([k,v])=>[k,round(v)])),
       summary:'架空の被害モデルによる計算結果。都市機能損失・災害連鎖を比較してください。'};
