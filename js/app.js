@@ -91,6 +91,7 @@
 
   function pause(){ S.playing=false; if(S.timer!==null){clearInterval(S.timer);S.timer=null;} }
   function navigate(page) {
+    if(isM1&&page==='start')page='intel';
     if(!order.includes(page)) return;
     if(order.indexOf(page)>S.unlocked && page!=='start') return;
     if(page==='result'&&!S.completedRun) return;
@@ -310,6 +311,107 @@
       <p class="disclaimer-inline">深さは一次災害を起点に、被害・連鎖障害のイベントのみをたどった最長経路の因果辺数です。都市側の対策・復旧は数えません。発生後の稼働率低下がある系統を「波及」と数えます。採点式・崩壊閾値はM1〜M2で検討します。</p></div>`;
   }
 
+  function setupM1Screen(){
+  const err=invalid(),opt=money();
+  return `<main class="page">
+    ${titleBlock('PHASE 02 / M1 PARAMETERS','地震の条件を設定する','架空断層上の震源位置と地震規模を変更し、同じ計算モデルで比較します。')}
+    <div class="content-grid"><div class="main-stack">
+      ${mapPanel('setup')}
+      <div class="intel-hint">黄色の架空断層線をクリックまたはドラッグして位置を変更できます。座標は模式図内の値です。</div>
+      <div class="panel rule-panel"><div class="eyebrow">M1 MODEL / RULES</div>
+        <p>プレイヤーが操作できるのは地震条件だけです。停電・火災・道路閉塞は都市モデルの計算から発生します。実在の被害予測ではありません。</p></div>
+    </div><aside class="side-stack"><div class="panel setup-panel">
+      <div class="panel-head"><span class="eyebrow">SEISMIC INPUT</span>${chip('一次災害','ghost')}</div>
+      <h2>発生条件</h2>
+      <label class="field-title" for="fault-position">01 / 架空断層上の震源位置</label>
+      <div class="fault-position-readout"><strong id="fault-position-value">${faultPercent()}</strong><span id="fault-case-label">位置に応じて連続計算</span></div>
+      <input id="fault-position" class="fault-position-slider" type="range" min="0" max="100" step="0.1" value="${(S.faultT*100).toFixed(1)}">
+      <div class="fault-endpoints"><span>断層 西端（0%）</span><span>断層 東端（100%）</span></div>
+      <label class="field-title" for="magnitude">02 / 地震の規模</label>
+      <select id="magnitude" class="field-select">${D.scenario.magnitudeOptions.map(m=>`<option value="${m.value}" ${S.magnitude===m.value?'selected':''}>${m.name}</option>`).join('')}</select>
+      <div class="rp-section"><div class="rp-line"><span>RISK POINT / 暫定値</span><strong>${opt.rp} / ${D.scenario.rpBudget} RP</strong></div></div>
+      <div class="validation ${err?'invalid':'valid'}" role="status">${esc(err?err.message:'設定可能。地震後は都市AIが観測・判断・対処します。')}</div>
+      <button class="btn btn-primary btn-full" data-action="simulate" ${err?'disabled':''}>シミュレーションを実行する →</button>
+      <p class="disclaimer-inline">RP・規模制約はM1の仮仕様。計算用マップ・震源位置・被害規則はすべて架空です。</p>
+    </div></aside></div></main>`;
+}
+
+  function observeM1Screen(){
+  const f=frame(),c=kase(),end=S.frame===c.frames.length-1;
+  return `<main class="page observe-page">
+    ${titleBlock('PHASE 03 / M1 SIMULATION','災害の連鎖を観察する',`震源：架空断層上 ${faultPercent()} / M${c.magnitude}。施設・インフラ・都市AIの相互作用を計算しています。`,chip('計算結果を再生中','demo'))}
+    <div class="content-grid"><div class="main-stack">
+      ${mapPanel('observe')}
+      <div class="panel playback-panel"><div class="playback-top"><div>
+        <span class="eyebrow">TIME CONTROL · Δt = 1分</span><div class="clock"><span data-clock>${fmtTime(f.time)}</span><small> / 06:00</small></div>
+      </div><div class="playback-actions">
+        <button class="control-btn" data-action="backframe" ${S.frame===0?'disabled':''} aria-label="1分戻る">‹‹</button>
+        <button class="control-btn control-main" data-action="${S.playing?'pause':'play'}" aria-label="${S.playing?'一時停止':'再生'}">${S.playing?'Ⅱ':'▶'}</button>
+        <button class="control-btn" data-action="nextframe" ${end?'disabled':''} aria-label="1分進む">››</button>
+        <button class="speed-btn" data-action="speed">${S.speed}×</button>
+      </div></div>
+      <input id="time-slider" type="range" min="0" max="${c.frames.length-1}" step="1" value="${S.frame}" class="time-slider" style="--progress:${100*S.frame/(c.frames.length-1)}%">
+      <div class="tick-labels"><span>00:00</span><span>03:00</span><span>06:00</span></div>
+      <div data-replay-ending data-ended="${end}">${end?'<button class="btn btn-primary btn-full result-btn" data-action="unlock" data-page="result">計算終了。結果を分析する →</button>':'<span class="micro muted">計算済みの時系列を観察できます。未来のイベントは再生時刻まで非公開です。</span>'}</div></div>
+      <div class="panel log-panel"><div class="panel-head"><div><span class="eyebrow">EVENT LOG</span><h3>観測されたイベント</h3></div>
+        <span data-event-count>${chip(allEvents(f.time).length+' 件','ghost')}</span></div>
+        <div class="event-list" data-event-list>${eventList(f.time)}</div></div>
+    </div><aside class="side-stack">
+      <div class="panel status-panel"><div class="panel-head"><span class="eyebrow">SYSTEM STATUS</span>
+        <span data-status-clock>${chip(fmtTime(f.time),'ghost')}</span></div>
+        <h2>都市機能の稼働状況</h2><div data-status-bars>${systemBars(f.values)}</div>
+        <p class="disclaimer-inline">架空の都市モデルの稼働率です。実際の都市被害を予測するものではありません。</p>
+      </div><div data-observe-event-detail>${selectedEventPanel()}</div>
+      <div data-observe-facility>${detailsPanel()}</div>
+    </aside></div></main>`;
+}
+
+  function resultM1Screen(){
+  const c=kase(),m=c.metrics;
+  const previous=S.previousRun?.simulation;
+  const altPos=D.fault.demoPositions[c.id==='west'?'east':'west'];
+  const other=previous||window.DC_SIM.simulate({faultPosition:altPos,magnitude:c.magnitude,seed:c.seed,enableCityAI:true});
+  const otherPos=previous?S.previousRun.faultT:altPos;
+  const pct=x=>(x*100).toFixed(1)+'%';
+  const decline=c.ending==='collapse';
+  return `<main class="page">
+    ${titleBlock('PHASE 04 / M1 RESULT','計算された連鎖を分析する','結果は架空モデルの計算値です。正式な勝敗・スコアや実際の被害予測ではありません。','<button class="btn btn-primary" data-action="retry">条件を変更して再挑戦 ↗</button>')}
+    <div class="result-hero ${decline?'red':'green'}"><div>
+      <span class="eyebrow">CALCULATED OUTCOME / SEED ${c.seed}</span>
+      <h2>${decline?'複数の都市機能に低下が残存':'都市機能は概ね維持・回復'}</h2>
+      <p>${esc(c.summary)}</p>
+      <div class="outcome-disclaimer">震源位置 ${pct(c.faultPosition)}、M${c.magnitude}。終局区分はM1の暫定指標です。</div>
+    </div><div class="score-spot"><span>時間平均機能損失</span>
+      <strong>${pct(m.meanLoss)}</strong><span>5系統・6時間の平均</span></div></div>
+    <div class="result-top-grid"><div class="panel"><div class="panel-head">
+      <span class="eyebrow">FINAL SYSTEM STATUS</span>${chip('06:00','ghost')}</div>
+      <h3>最終都市機能</h3>${systemBars(c.frames.at(-1).values,true)}</div>
+      <div class="panel"><div class="panel-head">
+        <span class="eyebrow">CASE COMPARISON</span>${chip(previous?'前回との比較':'別地点との比較','ghost')}</div>
+        <h3>同じモデルで結果を比較</h3><div class="comparison">
+          <div class="compare-row"><span></span><strong>今回</strong><strong>${previous?'前回':'参考計算'}</strong></div>
+          <div class="compare-row"><span>震源位置</span><strong>${pct(c.faultPosition)}</strong><strong>${pct(otherPos)}</strong></div>
+          <div class="compare-row"><span>地震規模</span><strong>M${c.magnitude}</strong><strong>M${other.magnitude}</strong></div>
+          <div class="compare-row"><span>平均機能損失</span><strong>${pct(m.meanLoss)}</strong><strong>${pct(other.metrics.meanLoss)}</strong></div>
+          <div class="compare-row"><span>最終機能損失</span><strong>${pct(m.finalLoss)}</strong><strong>${pct(other.metrics.finalLoss)}</strong></div>
+          <div class="compare-row"><span>連鎖深さ</span><strong>${m.depthEdges} 辺</strong><strong>${other.metrics.depthEdges} 辺</strong></div>
+        </div><p class="disclaimer-inline">参考計算は反対側の代表地点を同じ規模・シードで計算したものです。前回との比較では他の条件も異なる場合があります。</p>
+      </div></div>
+    <div class="panel evaluation-panel"><div class="panel-head"><span class="eyebrow">M1 / COMPARISON METRICS</span>${chip('正式スコア未定','ghost')}</div>
+      <h3>災害連鎖の評価</h3><div class="evaluation-metrics">
+        <div><small>有害イベントの最長因果経路</small><strong>${m.depthEdges}<em> 辺</em></strong></div>
+        <div><small>低下した都市機能</small><strong>${m.affectedCount}<em> / 5 系統</em></strong></div>
+        <div><small>最終機能損失</small><strong>${pct(m.finalLoss)}</strong></div>
+      </div><p class="panel-copy">同規模の地震でも震源位置によって被害が変化し、都市AIの対処によって被害が軽減されます。定量比較は自動実験でも再現できます。</p></div>
+    <div class="result-analysis-grid"><div class="panel"><div class="panel-head"><span class="eyebrow">CAUSAL HISTORY</span>${chip('原因IDで追跡','ghost')}</div>
+      <h3>イベントとその原因</h3><p class="panel-copy">イベントを選択すると原因と派生したイベントを確認できます。</p>${causalChain()}
+    </div><div class="side-stack">${selectedEventPanel()}
+      <div class="panel"><span class="eyebrow">NEXT ATTEMPT</span><h3>別の震源で再実行</h3>
+        <p class="panel-copy">現在の規模を維持したまま断層の反対側でも計算できます。</p>
+        <button class="btn btn-secondary btn-full" data-action="compare">反対側で再計算 →</button>
+      </div></div></div></main>`;
+}
+
   function resultScreen(){
     if(isM1)return resultM1Screen();
     const c=kase(), last=c.frames.at(-1),collapsed=c.ending==='collapse', other=D.cases[c.id==='west'?'east':'west'];
@@ -356,7 +458,7 @@
     if(info){const html=detailsPanel();if(info.dataset.html!==html){info.innerHTML=html;info.dataset.html=html;}}
     const ending=app.querySelector('[data-replay-ending]');
     if(ending&&ending.dataset.ended!==String(end)){
-      ending.innerHTML=end?'<button class="btn btn-primary btn-full result-btn" data-action="unlock" data-page="result">演示終了。結果を分析する →</button>':'<span class="micro muted">再生が終わると結果分析へ進めます。時間バーは1分刻みです。イベントのない時刻は直前の状態を維持します。</span>';
+      ending.innerHTML=end?(isM1?'<button class="btn btn-primary btn-full result-btn" data-action="unlock" data-page="result">計算終了。結果を分析する →</button>':'<button class="btn btn-primary btn-full result-btn" data-action="unlock" data-page="result">演示終了。結果を分析する →</button>'):(isM1?'<span class="micro muted">発生時刻までのイベントを確認できます。</span>':'<span class="micro muted">再生が終わると結果分析へ進めます。時間バーは1分刻みです。イベントのない時刻は直前の状態を維持します。</span>');
       ending.dataset.ended=String(end);
     }
     const resultNav=app.querySelector('.top-nav [data-page="result"]');if(resultNav)resultNav.disabled=!S.completedRun;
