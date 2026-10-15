@@ -12,5 +12,5 @@ jobs:
           node-version: '22'
       - run: node --check js/m1-sim.js
       - run: node --check js/app.js
-      - run: node --test tests/test_m1_sim.cjs
+      - run: node --test tests/test_m1_sim.cjs tests/test_m1_ui.cjs
       - run: node scripts/run-m1-experiments.cjs
