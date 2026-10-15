@@ -1,0 +1,16 @@
+name: M1 simulation tests
+on:
+  push:
+  pull_request:
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check js/m1-sim.js
+      - run: node --check js/app.js
+      - run: node --test tests/test_m1_sim.cjs tests/test_m1_ui.cjs
+      - run: node scripts/run-m1-experiments.cjs
